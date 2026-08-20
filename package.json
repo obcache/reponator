@@ -1,0 +1,50 @@
+{
+  "name": "reponator",
+  "displayName": "Reponator",
+  "description": "Create a GitHub-backed project with reusable planning, handoff, documentation, and versioning scaffolding.",
+  "version": "0.1.0",
+  "publisher": "local-tools",
+  "license": "UNLICENSED",
+  "private": true,
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:reponator.createProject"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "reponator.createProject",
+        "title": "Reponator: Create Project",
+        "category": "Reponator"
+      }
+    ],
+    "configuration": {
+      "title": "Reponator",
+      "properties": {
+        "reponator.defaultProjectPath": {
+          "type": "string",
+          "default": "",
+          "description": "Default parent folder offered when creating a project."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "check": "tsc --noEmit -p ./",
+    "package": "vsce package --allow-missing-repository --skip-license"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.14",
+    "@types/vscode": "^1.95.0",
+    "@vscode/vsce": "^3.2.2",
+    "typescript": "^5.8.2"
+  }
+}
