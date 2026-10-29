@@ -3,6 +3,8 @@ export interface ProjectSpec {
   name: string;
   description: string;
   isPrivate: boolean;
+  displayName?: string;
+  foundation?: import('./foundation').ProjectFoundation;
 }
 
 export interface GitHubUser {
@@ -26,9 +28,4 @@ export interface CreatedRepository {
   htmlUrl: string;
   cloneUrl: string;
   fullName: string;
-}
-
-export interface RemoteCommitResult {
-  treeSha: string;
-  commitSha: string;
 }

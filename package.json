@@ -2,7 +2,7 @@
   "name": "reponator",
   "displayName": "Reponator",
   "description": "Create a GitHub-backed project with reusable planning, handoff, documentation, and versioning scaffolding.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "local-tools",
   "license": "UNLICENSED",
   "private": true,
@@ -13,14 +13,29 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:reponator.createProject"
+    "onStartupFinished",
+    "onCommand:reponator.createProject",
+    "onCommand:reponator.finishPublishing"
   ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false
+    }
+  },
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "reponator.createProject",
-        "title": "Reponator: Create Project",
+        "title": "Create Project",
+        "category": "Reponator"
+      },
+      {
+        "command": "reponator.finishPublishing",
+        "title": "Finish Publishing Project",
         "category": "Reponator"
       }
     ],
@@ -39,6 +54,8 @@
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "check": "tsc --noEmit -p ./",
+    "test": "npm run compile && node --test tests/*.test.cjs",
+    "vscode:prepublish": "npm run compile",
     "package": "vsce package --allow-missing-repository --skip-license"
   },
   "devDependencies": {

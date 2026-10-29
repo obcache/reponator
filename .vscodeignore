@@ -2,6 +2,8 @@
 .git/**
 src/**
 node_modules/**
+dist/*.ps1
 *.vsix
 tsconfig.json
 package-lock.json
+tests/**

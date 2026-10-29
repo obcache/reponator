@@ -17,6 +17,46 @@ Reponator should encode those patterns so each new project begins with the same 
 
 ## Gravity Model
 
+### Foundation Before Functionality
+
+Every new project carries a `docs/PROJECT_FOUNDATION.md` and a machine-readable
+`tools/project-mgmt/foundation.json`. The creation wizard records stack, target,
+delivery, storage, user/access model, UX, branding and verification choices there.
+Keep product functionality in the user's first implementation request. A foundation
+choice describes the environment in which that functionality should be built.
+
+The root `AGENTS.md` includes a short foundation summary and the core operating
+principles directly, then requires reading the full foundation, this document,
+`docs/developer/engineering-geometry.md`, the workflow guide, package manifest,
+planning file and ledger before implementation. For agents that discover
+`AGENTS.md`, those instructions are startup context. Linked files still need to
+be read; a reference does not inject an entire document into an existing chat.
+
+After the structure is finalized, reconcile package scripts, manifest paths,
+version targets and all docs against the real code. Repeat after architectural
+changes. Defaults are recorded decisions, not permission to ignore a later user
+instruction or a changed deployment constraint.
+
+### Relationships Guide Routine Decisions
+
+Use cross-domain structural correspondence to choose reasonable implementations
+without interrupting work for every missing detail. Preserve constraints,
+interfaces, ownership and feedback relationships when translating a pattern.
+Record the evidence, assumption, reversible choice and a validation check.
+The companion engineering geometry guide supplies a practical procedure.
+
+An analogy suggests a candidate design; it is not evidence that unrelated domains
+are equivalent. Escalate only when a decision changes the requested outcome,
+requires a real secret or provider choice, or has substantial irreversible cost.
+
+### Useful Defaults Are Executable
+
+Pair docs with discoverable scripts and validation. Unknown build/deploy commands
+must fail with an actionable message until implemented. Local runtime data and
+bootstrap secrets stay outside the shipped artifact and committed documentation.
+Roles define permissions; groups organize membership; hybrid systems assign roles
+through groups. Document and test the chosen authorization boundary explicitly.
+
 In this project, "gravity" means the practical pull created by repo structure, scripts, naming, documentation, examples, and repeated workflow. It is the local language for attractors in both software projects and model behavior.
 
 Useful project gravity bends future work toward intended outcomes:
@@ -173,10 +213,10 @@ Reponator itself is currently a VS Code extension built with TypeScript and Node
 
 - VS Code extension APIs
 - VS Code GitHub authentication
-- GitHub REST and Git Database APIs
+- GitHub REST for repository creation and authenticated Git for publishing
 - local Git
 - Node.js on the machine running the extension
-- generated JavaScript/PowerShell tooling inside target projects
+- generated JavaScript tooling inside target projects
 
 Generated projects should not assume the same runtime capabilities unless their archetype declares them. For example, a PHP shared-host project may use Node locally to build, but production cannot assume Node, Composer, shell access, Docker, or long-running workers.
 

@@ -1,19 +1,26 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { ProjectSpec, ScaffoldFile } from './types';
+import { foundationFiles, foundationFor, generatorVersion } from './projectDocs';
+import { foundationSummary } from './foundation';
 
 export function createScaffoldFiles(spec: ProjectSpec): ScaffoldFile[] {
   const packageJson = {
-    name: spec.name,
+    name: spec.name.toLowerCase(),
     version: '0.1.0',
     private: spec.isPrivate,
     description: spec.description,
     scripts: {
+      build: 'node tools/project-mgmt/stack-command.js build',
+      test: 'node tools/project-mgmt/stack-command.js test',
+      package: 'node tools/project-mgmt/stack-command.js package',
+      'deploy:check': 'node tools/project-mgmt/stack-command.js deploy:check',
       todo: 'node tools/project-mgmt/todo.js list',
       'todo:add': 'node tools/project-mgmt/todo.js add',
       'ledger:list': 'node tools/project-mgmt/ledger.js list',
       'ledger:message': 'node tools/project-mgmt/ledger.js message',
-      handoff: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/project-mgmt/handoff.ps1',
+      handoff: 'node tools/project-mgmt/handoff.js',
       'version:show': 'node tools/project-mgmt/version-show.js',
       'version:sync': 'node tools/project-mgmt/version-sync.js',
       'version:bump:patch': 'node tools/project-mgmt/version-bump.js patch',
@@ -27,15 +34,21 @@ export function createScaffoldFiles(spec: ProjectSpec): ScaffoldFile[] {
 
   const manifest = {
     generator: 'reponator',
-    generatorVersion: '0.1.0',
+    generatorVersion,
+    schemaVersion: 2,
     generatedAt: new Date().toISOString(),
     project: {
       name: spec.name,
       description: spec.description,
       private: spec.isPrivate
     },
+    foundation: foundationFor(spec),
+    foundationPath: 'docs/PROJECT_FOUNDATION.md',
+    artifactBoundary: 'dist/',
+    migrationPolicy: 'Explicit, versioned and validated when persistence is implemented.',
     layout: {
       docs: [
+        'AGENTS.md',
         'README.md',
         'docs/dev-ledger.md',
         'docs/planning/To-do.md',
@@ -50,7 +63,7 @@ export function createScaffoldFiles(spec: ProjectSpec): ScaffoldFile[] {
       tools: [
         'tools/project-mgmt/ledger.js',
         'tools/project-mgmt/todo.js',
-        'tools/project-mgmt/handoff.ps1',
+        'tools/project-mgmt/handoff.js',
         'tools/project-mgmt/version-show.js',
         'tools/project-mgmt/version-sync.js',
         'tools/project-mgmt/version-bump.js',
@@ -59,9 +72,11 @@ export function createScaffoldFiles(spec: ProjectSpec): ScaffoldFile[] {
     }
   };
 
-  return normalizeFiles([
+  const files = normalizeFiles([
+    ...foundationFiles(spec),
     { path: '.gitattributes', content: '* text=auto eol=lf\n' },
     { path: '.gitignore', content: gitignoreTemplate() },
+    { path: 'AGENTS.md', content: agentsTemplate(spec) },
     { path: 'VERSION', content: '0.1.0\n' },
     { path: 'package.json', content: `${JSON.stringify(packageJson, null, 2)}\n` },
     { path: 'README.md', content: rootReadme(spec) },
@@ -75,22 +90,29 @@ export function createScaffoldFiles(spec: ProjectSpec): ScaffoldFile[] {
     { path: 'docs/developer/handoff.md', content: developerGuide('Handoff Guide') },
     { path: 'docs/developer/versioning.md', content: versioningGuide() },
     { path: 'tools/project-mgmt/README.md', content: projectMgmtReadme() },
-    { path: 'tools/project-mgmt/manifest.json', content: `${JSON.stringify(manifest, null, 2)}\n` },
     { path: 'tools/project-mgmt/ledger.js', content: ledgerJs() },
     { path: 'tools/project-mgmt/todo.js', content: todoJs() },
     { path: 'tools/project-mgmt/version-show.js', content: versionShowJs() },
     { path: 'tools/project-mgmt/version-sync.js', content: versionSyncJs() },
     { path: 'tools/project-mgmt/version-bump.js', content: versionBumpJs() },
     { path: 'tools/project-mgmt/commit-release.js', content: commitReleaseJs() },
-    { path: 'tools/project-mgmt/handoff.ps1', content: handoffPs1() }
+    { path: 'tools/project-mgmt/handoff.js', content: handoffJs() }
   ]);
+  manifest.layout.docs = files.filter(file => file.path.endsWith('.md')).map(file => file.path);
+  manifest.layout.tools = files.filter(file => file.path.startsWith('tools/')).map(file => file.path);
+  const delivered = {
+    ...manifest,
+    files: files.map(file => ({ path: file.path, sha256: createHash('sha256').update(file.content).digest('hex') })),
+    integrityScope: 'Creation-time seed hashes; excludes this manifest, local secrets and later edits.'
+  };
+  return normalizeFiles([...files, { path: 'tools/project-mgmt/manifest.json', content: `${JSON.stringify(delivered, null, 2)}\n` }]);
 }
 
 export async function writeScaffoldFiles(root: string, files: ScaffoldFile[]): Promise<void> {
   for (const file of files) {
     const target = join(root, file.path);
     await mkdir(dirname(target), { recursive: true });
-    await writeFile(target, file.content, 'utf8');
+    await writeFile(target, file.content, { encoding: 'utf8', flag: 'wx' });
   }
 }
 
@@ -107,14 +129,14 @@ function normalize(content: string): string {
 
 function rootReadme(spec: ProjectSpec): string {
   const visibility = spec.isPrivate ? 'Private' : 'Public';
-  return `# ${spec.name}
+  return `# ${spec.displayName || spec.name}
 
 ${spec.description}
 
 ## Project Status
 
 - Visibility: ${visibility}
-- Version: 0.1.0
+- Version: see \`VERSION\` (synchronized with package.json)
 - Created: ${new Date().toISOString().slice(0, 10)}
 
 ## Overview
@@ -136,6 +158,8 @@ Show the common commands and user-facing workflows.
 ## Development
 
 Project workflow files live under \`docs/\` and reusable automation lives under \`tools/project-mgmt/\`.
+Agent-facing startup instructions live in \`AGENTS.md\`.
+The selected stack, UX, storage, users and delivery decisions are in \`docs/PROJECT_FOUNDATION.md\`.
 
 \`\`\`powershell
 npm run todo
@@ -166,6 +190,7 @@ function gitignoreTemplate(): string {
   return `node_modules/
 .env
 .env.*
+!.env.example
 .tmp/
 dist/
 build/
@@ -174,6 +199,65 @@ release/
 tools/project-mgmt/.codex-bundle/
 tools/project-mgmt/chat-handoffs/
 docs/handoffs/handoff-*.md
+`;
+}
+
+function agentsTemplate(spec: ProjectSpec): string {
+  return `# Agent Instructions
+
+This repository was initialized with Reponator. Before making changes, review the project-management scaffold so the work stays aligned with the project record.
+
+## Foundation In Startup Context
+
+${foundationSummary(foundationFor(spec))}
+
+Use these recorded choices when interpreting the user's functional request. Update
+them when the user changes direction. The selection is a specification, not a claim
+that an application, auth system or deployment has already been implemented.
+
+## Engineering Defaults In Startup Context
+
+- Preserve constraints, ownership, interfaces and invariants when applying patterns
+  from another domain. An analogy suggests a design; tests and evidence establish fit.
+- Make routine reversible decisions, record assumptions and validate them. Request
+  missing facts for material outcome/cost/data-loss decisions or actual credentials.
+- package.json is the command surface; dist/ is the shipped artifact boundary.
+- Keep runtime data and secrets outside artifacts and committed docs.
+- Use established domain/auth libraries; enforce authorization at trusted boundaries.
+- When asked to commit, default to a patch bump unless major/minor was requested.
+
+## Required Startup Read
+
+Read these files at the start of a new coding session:
+
+- \`docs/PROJECT_FOUNDATION.md\`
+- \`docs/developer/project-gravity.md\`
+- \`docs/developer/engineering-geometry.md\`
+- \`docs/developer/workflow.md\`
+- \`README.md\`
+- \`package.json\`
+- \`tools/project-mgmt/manifest.json\`
+- \`docs/planning/To-do.md\`
+- \`docs/dev-ledger.md\`
+- Relevant files under \`docs/developer/\`
+- \`docs/user/UserGuide.md\` when work affects user-facing behavior
+
+## Working Practice
+
+- Treat \`docs/planning/To-do.md\` as the active planning surface.
+- Record meaningful decisions, validations, risks, and rollback notes in \`docs/dev-ledger.md\`.
+- Update public-facing docs when behavior or workflows change.
+- Use \`npm run handoff\` before ending long or complex sessions so future agents can resume from durable context.
+- Use the package scripts as the default project-management entry points.
+- Read \`docs/handoffs/HANDOFF.md\` when present.
+- After finalizing the structure, review package.json, manifest.json, foundation and
+  all docs against real files, commands and runtime assumptions. Record that review.
+- Report changed files, validation, whether dist/ was rebuilt, migration changes
+  and any deployment action still required.
+
+## Versioning
+
+The initial version tooling updates common locations only. After the ${spec.name} app stack and layout are finalized, inspect all first-party version locations and update \`tools/project-mgmt/version-sync.js\`, \`version-show.js\`, and related package scripts. Exclude third-party modules and libraries. Validate that patch, minor and major bumps synchronize the intended files.
 `;
 }
 
@@ -219,7 +303,7 @@ Rollback Strategy
 
 ## Entries
 
-### [YYYY-MM-DD] Initial Project Bootstrap (Status: Complete)
+### [${new Date().toISOString().slice(0, 10)}] Initial Project Bootstrap (Status: Complete)
 Author: reponator
 
 Summary
@@ -236,6 +320,8 @@ Validation
 Follow-ups
 - [ ] Replace README outline text with project-specific content.
 - [ ] Add build, test, and deployment commands once the application stack is chosen.
+- [ ] After choosing the application stack, update version tooling for all real version locations.
+- [ ] Reconcile package.json, manifest.json, foundation and docs once the structure is finalized.
 
 Rollback Strategy
 - Revert the initial scaffold commit or remove generated workflow files.
@@ -279,6 +365,9 @@ This file is the planning mechanism for active work. Keep it current enough that
 - [ ] Replace this starter checklist with actionable tasks.
 - [ ] Add acceptance criteria for the first milestone.
 - [ ] Link important decisions back to \`docs/dev-ledger.md\`.
+- [ ] Once the app stack is selected, update \`tools/project-mgmt/version-sync.js\` for stack-specific version files.
+- [ ] Review \`docs/PROJECT_FOUNDATION.md\` and implement the user's requested functionality within its selected environment.
+- [ ] After finalizing the structure, reconcile package.json, manifest.json and docs with the implemented layout and commands.
 
 ## Backlog
 
@@ -356,6 +445,8 @@ function versioningGuide(): string {
 
 The root \`package.json\` version is the source of truth. Version tooling also updates package-lock files, nested package files, \`VERSION\`, \`version.txt\`, and common Inno Setup version fields when those files exist.
 
+After the application stack is chosen, inspect the codebase for stack-specific version locations and update \`tools/project-mgmt/version-sync.js\`, \`version-show.js\`, and package scripts accordingly. Examples include installer definitions, desktop app metadata, browser extension manifests, mobile app manifests, Docker labels, generated web assets, and per-package workspace versions.
+
 ## Commands
 
 \`\`\`powershell
@@ -387,7 +478,7 @@ This folder contains neutral workflow tools generated by Reponator.
 - \`manifest.json\` records the generated scaffold.
 - \`ledger.js\` reads \`docs/dev-ledger.md\` and can print a commit message from Complete entries.
 - \`todo.js\` lists and appends Markdown planning tasks in \`docs/planning/To-do.md\`.
-- \`handoff.ps1\` creates a durable handoff summary under \`docs/handoffs/\`.
+- \`handoff.js\` creates a durable handoff summary under \`docs/handoffs/\`.
 - \`version-show.js\`, \`version-sync.js\`, and \`version-bump.js\` keep project version values aligned.
 - \`commit-release.js\` bumps the requested version part, commits, and pushes when a remote exists.
 
@@ -580,7 +671,7 @@ function readTextVersion(filePath) {
 function walk(dir, callback) {
   if (!fs.existsSync(dir)) return;
   for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (['.git', 'node_modules', 'dist', 'build', 'release'].includes(item.name)) continue;
+    if (item.isSymbolicLink() || ['.git', 'node_modules', 'vendor', 'third_party', '.venv', 'venv', 'dist', 'build', 'release'].includes(item.name)) continue;
     const full = path.join(dir, item.name);
     if (item.isDirectory()) walk(full, callback);
     else callback(full);
@@ -665,7 +756,7 @@ function updateInnoVersion(filePath, version) {
 function walk(dir, callback) {
   if (!exists(dir)) return;
   for (const item of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (['.git', 'node_modules', 'dist', 'build', 'release'].includes(item.name)) continue;
+    if (item.isSymbolicLink() || ['.git', 'node_modules', 'vendor', 'third_party', '.venv', 'venv', 'dist', 'build', 'release'].includes(item.name)) continue;
     const full = path.join(dir, item.name);
     if (item.isDirectory()) walk(full, callback);
     else callback(full);
@@ -800,67 +891,35 @@ main();
 `;
 }
 
-function handoffPs1(): string {
-  return `Param(
-  [string]$Summary = ''
-)
-
-$ErrorActionPreference = 'Stop'
-$root = (Get-Location).Path
-$handoffDir = Join-Path $root 'docs/handoffs'
-New-Item -ItemType Directory -Force -Path $handoffDir | Out-Null
-
-$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-$snapshotPath = Join-Path $handoffDir "handoff-$stamp.md"
-$latestPath = Join-Path $handoffDir 'HANDOFF.md'
-
-function Capture($Command, [string[]]$Arguments) {
-  try {
-    $output = & $Command @Arguments 2>&1
-    return ($output | Out-String).Trim()
-  } catch {
-    return $_.Exception.Message
-  }
+function handoffJs(): string {
+  return `#!/usr/bin/env node
+const fs = require('node:fs');
+const path = require('node:path');
+const cp = require('node:child_process');
+const root = path.resolve(__dirname, '../..');
+function capture(args) {
+  try { return cp.execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] }).trim(); }
+  catch (error) { return '(unavailable: ' + error.message + ')'; }
 }
-
-function Section($Title, $Body) {
-  if ([string]::IsNullOrWhiteSpace($Body)) { $Body = '(none)' }
-  return "## $Title\`r\`n\`r\`n$Body\`r\`n"
+function read(file) {
+  const target = path.join(root, file);
+  return fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : '(not present)';
 }
-
-$branch = Capture git @('branch','--show-current')
-$status = Capture git @('status','--short')
-$recent = Capture git @('log','--oneline','-10')
-$todo = if (Test-Path 'docs/planning/To-do.md') { Get-Content -Raw 'docs/planning/To-do.md' } else { '' }
-$ledger = if (Test-Path 'docs/dev-ledger.md') { Get-Content -Raw 'docs/dev-ledger.md' } else { '' }
-$ledgerTail = if ($ledger.Length -gt 8000) { $ledger.Substring($ledger.Length - 8000) } else { $ledger }
-
-$content = @"
-# Project Handoff
-
-Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss zzz')
-
-## Summary
-
-$Summary
-
-$(Section 'Current Branch' $branch)
-$(Section 'Working Tree' $status)
-$(Section 'Recent Commits' $recent)
-$(Section 'Planning Snapshot' $todo)
-$(Section 'Dev Ledger Tail' $ledgerTail)
-
-## Next Session Checklist
-
-- [ ] Read this handoff.
-- [ ] Review \`docs/planning/To-do.md\`.
-- [ ] Review recent \`docs/dev-ledger.md\` entries.
-- [ ] Run the smallest relevant validation command before editing.
-"@
-
-[System.IO.File]::WriteAllText($snapshotPath, $content, [System.Text.UTF8Encoding]::new($false))
-[System.IO.File]::WriteAllText($latestPath, $content, [System.Text.UTF8Encoding]::new($false))
-Write-Host "[handoff] Wrote $snapshotPath"
-Write-Host "[handoff] Updated $latestPath"
+const summary = process.argv.slice(2).join(' ') || 'Review current planning and ledger before continuing.';
+const content = '# Project Handoff\\n\\nGenerated: ' + new Date().toISOString() + '\\n\\n' +
+  '## Summary\\n\\n' + summary + '\\n\\n' +
+  '## Current Branch\\n\\n' + capture(['branch', '--show-current']) + '\\n\\n' +
+  '## Working Tree\\n\\n' + capture(['status', '--short']) + '\\n\\n' +
+  '## Recent Commits\\n\\n' + capture(['log', '--oneline', '-10']) + '\\n\\n' +
+  '## Foundation\\n\\n' + read('docs/PROJECT_FOUNDATION.md') + '\\n\\n' +
+  '## Planning Snapshot\\n\\n' + read('docs/planning/To-do.md') + '\\n\\n' +
+  '## Dev Ledger Tail\\n\\n' + read('docs/dev-ledger.md').slice(-8000) + '\\n\\n' +
+  '## Next Session\\n\\nRead AGENTS.md and its startup documents. Validate current state before editing.\\n';
+const dir = path.join(root, 'docs/handoffs');
+fs.mkdirSync(dir, { recursive: true });
+const snapshot = path.join(dir, 'handoff-' + new Date().toISOString().replace(/[:.]/g, '-') + '.md');
+fs.writeFileSync(snapshot, content);
+fs.writeFileSync(path.join(dir, 'HANDOFF.md'), content);
+console.log('[handoff] Updated docs/handoffs/HANDOFF.md');
 `;
 }

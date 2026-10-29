@@ -1,5 +1,5 @@
 import * as https from 'node:https';
-import { CreatedRepository, GitAuthor, GitHubUser, ProjectSpec, RemoteCommitResult, ScaffoldFile } from './types';
+import { CreatedRepository, GitHubUser, ProjectSpec } from './types';
 
 interface GitHubErrorBody {
   message?: string;
@@ -40,72 +40,6 @@ export class GitHubClient {
       htmlUrl: response.html_url,
       cloneUrl: response.clone_url,
       fullName: response.full_name
-    };
-  }
-
-  public async createInitialCommit(
-    owner: string,
-    repo: string,
-    files: ScaffoldFile[],
-    author: GitAuthor,
-    message: string
-  ): Promise<RemoteCommitResult> {
-    const tree = [];
-    for (const file of files) {
-      const blob = await this.request<{ sha: string }>(
-        'POST',
-        `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/blobs`,
-        {
-          content: file.content,
-          encoding: 'utf-8'
-        }
-      );
-      tree.push({
-        path: file.path,
-        mode: '100644',
-        type: 'blob',
-        sha: blob.sha
-      });
-    }
-
-    const createdTree = await this.request<{ sha: string }>(
-      'POST',
-      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees`,
-      { tree }
-    );
-
-    const commit = await this.request<{ sha: string }>(
-      'POST',
-      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/commits`,
-      {
-        message,
-        tree: createdTree.sha,
-        parents: [],
-        author,
-        committer: author
-      }
-    );
-
-    await this.request(
-      'POST',
-      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/refs`,
-      {
-        ref: 'refs/heads/main',
-        sha: commit.sha
-      }
-    );
-
-    await this.request(
-      'PATCH',
-      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`,
-      {
-        default_branch: 'main'
-      }
-    );
-
-    return {
-      treeSha: createdTree.sha,
-      commitSha: commit.sha
     };
   }
 
@@ -151,6 +85,7 @@ export class GitHubClient {
       );
 
       request.on('error', reject);
+      request.setTimeout(30_000, () => request.destroy(new Error('GitHub request timed out.')));
       if (payload) {
         request.write(payload);
       }
